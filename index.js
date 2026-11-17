@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 
 import { connectDB } from './src/config/db.js';
+import authRoutes from './src/routes/auth.routes.js';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -17,12 +18,32 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Routes
+app.use('/api/auth', authRoutes);
+
 // Root health check endpoint
 app.get('/', (req, res) => {
   res.json({
     status: 'success',
     message: 'PizzaHub Server is up and running!',
     timestamp: new Date().toISOString()
+  });
+});
+
+// 404 handler for unknown API routes
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Route not found: ${req.method} ${req.originalUrl}`,
+  });
+});
+
+// Global error handling middleware
+app.use((err, req, res, next) => {
+  console.error('[Unhandled Server Error]:', err);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal server error',
   });
 });
 
