@@ -2,7 +2,7 @@ import express from 'express';
 import { ObjectId } from 'mongodb';
 import { collections } from '../config/db.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
-import { verifyVendor } from '../middlewares/verifyRole.js';
+import { verifyVendor, verifyAdmin } from '../middlewares/verifyRole.js';
 import {
   MENU_CATEGORIES,
   MENU_STATUS,
@@ -274,4 +274,179 @@ router.delete('/my-items/:id', verifyToken, verifyVendor, async (req, res) => {
   }
 });
 
+/* ==========================================================================
+   ADMIN MENU MANAGEMENT & REVIEW ROUTES (Protected by verifyAdmin)
+   ========================================================================== */
+
+/**
+ * GET /api/menu/admin/all
+ * Retrieve all submitted menu items across all vendors
+ * Query params: ?status=pending&category=Classic%20Pizzas&search=margherita
+ */
+router.get('/admin/all', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const { status, category, search } = req.query;
+    const query = {};
+
+    // Filter by item approval status
+    if (status && Object.values(MENU_STATUS).includes(status.toLowerCase())) {
+      query.status = status.toLowerCase();
+    }
+
+    // Filter by category
+    if (category && MENU_CATEGORIES.includes(category)) {
+      query.category = category;
+    }
+
+    // Search by item name or location
+    if (search && search.trim() !== '') {
+      query.$or = [
+        { itemName: { $regex: search.trim(), $options: 'i' } },
+        { location: { $regex: search.trim(), $options: 'i' } },
+      ];
+    }
+
+    const items = await collections.menuItems
+      .find(query)
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    return res.status(200).json({
+      success: true,
+      count: items.length,
+      items,
+    });
+  } catch (error) {
+    console.error('[Admin Get All Items Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch menu items for administration.',
+    });
+  }
+});
+
+/**
+ * GET /api/menu/admin/stats
+ * Aggregated menu statistics for Admin Dashboard overview
+ */
+router.get('/admin/stats', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const [totalItems, pendingItems, approvedItems, rejectedItems] = await Promise.all([
+      collections.menuItems.countDocuments(),
+      collections.menuItems.countDocuments({ status: MENU_STATUS.PENDING }),
+      collections.menuItems.countDocuments({ status: MENU_STATUS.APPROVED }),
+      collections.menuItems.countDocuments({ status: MENU_STATUS.REJECTED }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      stats: {
+        totalItems,
+        pendingItems,
+        approvedItems,
+        rejectedItems,
+      },
+    });
+  } catch (error) {
+    console.error('[Admin Menu Stats Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to load menu statistics.',
+    });
+  }
+});
+
+/**
+ * PATCH /api/menu/admin/:id/status
+ * Review menu item: Approve, Reject, or change published status
+ * Body: { "status": "approved" | "rejected" | "inactive" | "pending" }
+ */
+router.patch('/admin/:id/status', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid menu item ID format.',
+      });
+    }
+
+    if (!status || !Object.values(MENU_STATUS).includes(status.toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Allowed values: ${Object.values(MENU_STATUS).join(', ')}`,
+      });
+    }
+
+    const normalizedStatus = status.toLowerCase();
+
+    const updateResult = await collections.menuItems.findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      { $set: { status: normalizedStatus, updatedAt: new Date() } },
+      { returnDocument: 'after' }
+    );
+
+    if (!updateResult) {
+      return res.status(404).json({
+        success: false,
+        message: 'Menu item not found.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Menu item status updated to '${normalizedStatus}'.`,
+      item: updateResult,
+    });
+  } catch (error) {
+    console.error('[Admin Update Status Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update menu item status.',
+    });
+  }
+});
+
+/**
+ * DELETE /api/menu/admin/:id
+ * Delete an inappropriate menu item (Admin privilege)
+ */
+router.delete('/admin/:id', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid menu item ID format.',
+      });
+    }
+
+    const deleteResult = await collections.menuItems.deleteOne({
+      _id: new ObjectId(id),
+    });
+
+    if (deleteResult.deletedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Menu item not found.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Menu item permanently removed by administrator.',
+    });
+  } catch (error) {
+    console.error('[Admin Delete Item Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete menu item.',
+    });
+  }
+});
+
 export default router;
+
