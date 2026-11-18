@@ -7,6 +7,7 @@ import authRoutes from './src/routes/auth.routes.js';
 import userRoutes from './src/routes/user.routes.js';
 import menuRoutes from './src/routes/menu.routes.js';
 import orderRoutes from './src/routes/order.routes.js';
+import paymentRoutes from './src/routes/payment.routes.js';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -26,6 +27,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/payment', paymentRoutes);
 
 // Root health check endpoint
 app.get('/', (req, res) => {
