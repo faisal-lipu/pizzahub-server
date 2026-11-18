@@ -2,6 +2,7 @@ import express from 'express';
 import { ObjectId } from 'mongodb';
 import { collections } from '../config/db.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
+import { verifyVendor } from '../middlewares/verifyRole.js';
 import {
   ORDER_STATUS,
   MENU_STATUS,
@@ -114,6 +115,247 @@ router.post('/', verifyToken, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to place order.',
+    });
+  }
+});
+
+/* ==========================================================================
+   VENDOR ORDER MANAGEMENT ROUTES (Protected by verifyVendor)
+   ========================================================================== */
+
+/**
+ * GET /api/orders/vendor
+ * Retrieve incoming customer orders for the authenticated vendor
+ * Query params: ?status=pending
+ */
+router.get('/vendor', verifyToken, verifyVendor, async (req, res) => {
+  try {
+    const { status } = req.query;
+    const vendorId = req.user._id;
+
+    const matchConditions = [
+      {
+        $or: [
+          { vendorId: vendorId },
+          { vendorId: new ObjectId(vendorId) },
+        ],
+      },
+    ];
+
+    if (status && Object.values(ORDER_STATUS).includes(status.toLowerCase())) {
+      matchConditions.push({ status: status.toLowerCase() });
+    }
+
+    const pipeline = [
+      { $match: { $and: matchConditions } },
+      // Lookup customer information
+      {
+        $lookup: {
+          from: 'users',
+          let: { cId: '$customerId' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $or: [
+                    { $eq: [{ $toString: '$_id' }, '$$cId'] },
+                    { $eq: ['$_id', '$$cId'] },
+                  ],
+                },
+              },
+            },
+            {
+              $project: {
+                name: 1,
+                email: 1,
+                image: 1,
+              },
+            },
+          ],
+          as: 'customer',
+        },
+      },
+      {
+        $unwind: {
+          path: '$customer',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      // Lookup ordered menu item details
+      {
+        $lookup: {
+          from: 'menuItems',
+          let: { itmId: '$itemId' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $or: [
+                    { $eq: [{ $toString: '$_id' }, '$$itmId'] },
+                    { $eq: ['$_id', '$$itmId'] },
+                  ],
+                },
+              },
+            },
+            {
+              $project: {
+                itemName: 1,
+                category: 1,
+                price: 1,
+                images: 1,
+                location: 1,
+              },
+            },
+          ],
+          as: 'menuItem',
+        },
+      },
+      {
+        $unwind: {
+          path: '$menuItem',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      { $sort: { createdAt: -1 } },
+    ];
+
+    const orders = await collections.orders.aggregate(pipeline).toArray();
+
+    return res.status(200).json({
+      success: true,
+      count: orders.length,
+      orders,
+    });
+  } catch (error) {
+    console.error('[Vendor Get Orders Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch customer orders.',
+    });
+  }
+});
+
+/**
+ * GET /api/orders/vendor/stats
+ * Aggregated order stats for Vendor Dashboard overview
+ */
+router.get('/vendor/stats', verifyToken, verifyVendor, async (req, res) => {
+  try {
+    const vendorId = req.user._id;
+    const vendorMatch = {
+      $or: [
+        { vendorId: vendorId },
+        { vendorId: new ObjectId(vendorId) },
+      ],
+    };
+
+    const [totalOrders, pendingOrders, acceptedOrders, rejectedOrders] = await Promise.all([
+      collections.orders.countDocuments(vendorMatch),
+      collections.orders.countDocuments({ ...vendorMatch, status: ORDER_STATUS.PENDING }),
+      collections.orders.countDocuments({ ...vendorMatch, status: ORDER_STATUS.ACCEPTED }),
+      collections.orders.countDocuments({ ...vendorMatch, status: ORDER_STATUS.REJECTED }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      stats: {
+        totalOrders,
+        pendingOrders,
+        acceptedOrders,
+        rejectedOrders,
+      },
+    });
+  } catch (error) {
+    console.error('[Vendor Order Stats Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to load vendor order statistics.',
+    });
+  }
+});
+
+/**
+ * PATCH /api/orders/vendor/:id/action
+ * Accept or Reject incoming customer order
+ * Rule: Only pending orders can be accepted or rejected, and only once
+ * Body: { "action": "accept" } or { "action": "reject" }
+ */
+router.patch('/vendor/:id/action', verifyToken, verifyVendor, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, status } = req.body;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID format.',
+      });
+    }
+
+    // Determine target action status
+    const requestedAction = (action || status || '').toLowerCase();
+    let targetStatus;
+
+    if (requestedAction === 'accept' || requestedAction === ORDER_STATUS.ACCEPTED) {
+      targetStatus = ORDER_STATUS.ACCEPTED;
+    } else if (requestedAction === 'reject' || requestedAction === ORDER_STATUS.REJECTED) {
+      targetStatus = ORDER_STATUS.REJECTED;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid action. Allowed actions are 'accept' or 'reject'.",
+      });
+    }
+
+    // Fetch order and verify ownership
+    const order = await collections.orders.findOne({ _id: new ObjectId(id) });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found.',
+      });
+    }
+
+    // Ownership check: Vendor cannot modify orders belonging to other vendors
+    if (order.vendorId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized. You cannot modify orders belonging to another vendor.',
+      });
+    }
+
+    // Rule: Only pending orders can be accepted or rejected, and only once
+    if (order.status !== ORDER_STATUS.PENDING) {
+      return res.status(400).json({
+        success: false,
+        code: 'ORDER_ALREADY_PROCESSED',
+        message: `This order is already '${order.status}'. Only pending orders can be accepted or rejected.`,
+      });
+    }
+
+    // Update status
+    await collections.orders.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          status: targetStatus,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `Order successfully ${targetStatus}.`,
+      orderId: id,
+      newStatus: targetStatus,
+    });
+  } catch (error) {
+    console.error('[Vendor Order Action Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update order status.',
     });
   }
 });
