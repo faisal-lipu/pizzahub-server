@@ -14,13 +14,14 @@ const router = express.Router();
 
 /**
  * POST /api/menu
- * ভেন্ডরের নতুন মেনু আইটেম যোগ করা (ফ্রি টায়ারে সর্বোচ্চ ৩টি আইটেম লিমিট চেকিং সহ)
+ * Create a new menu item for a vendor
+ * Enforces free-tier limit of max 3 active/pending items
  */
 router.post('/', verifyToken, verifyVendor, async (req, res) => {
   try {
     const { itemName, category, description, price, location, images, image } = req.body;
 
-    // প্রয়োজনীয় ফিল্ডগুলো চেক করা
+    // Validate required fields
     if (!itemName || !category || price === undefined || !location) {
       return res.status(400).json({
         success: false,
@@ -28,7 +29,7 @@ router.post('/', verifyToken, verifyVendor, async (req, res) => {
       });
     }
 
-    // ক্যাটাগরি ভ্যালিড কিনা চেক করা
+    // Validate category
     if (!MENU_CATEGORIES.includes(category)) {
       return res.status(400).json({
         success: false,
@@ -36,7 +37,7 @@ router.post('/', verifyToken, verifyVendor, async (req, res) => {
       });
     }
 
-    // ইমেজ চেক করা (ImgBB থেকে প্রাপ্ত লিংক)
+    // Validate image URL (ImgBB)
     const finalImages = Array.isArray(images) && images.length > 0
       ? images
       : image
@@ -50,11 +51,11 @@ router.post('/', verifyToken, verifyVendor, async (req, res) => {
       });
     }
 
-    // ভেন্ডরের বর্তমান ডাটাবেজ তথ্য ও সাবস্ক্রিপশন প্ল্যান চেক করা
+    // Check vendor subscription plan
     const vendor = await collections.users.findOne({ _id: new ObjectId(req.user._id) });
     const isPremium = vendor?.subscriptionPlan === SUBSCRIPTION_PLANS.PREMIUM;
 
-    // ফ্রি প্ল্যানের নিয়ম: সর্বোচ্চ ৩টি আইটেম (রিজেক্টেড আইটেম ছাড়া পেন্ডিং ও অ্যাপ্রুভড আইটেম গুনে দেখা)
+    // Free plan rule: maximum 3 items (excluding rejected ones)
     if (!isPremium) {
       const currentItemCount = await collections.menuItems.countDocuments({
         vendorId: req.user._id,
@@ -72,7 +73,7 @@ router.post('/', verifyToken, verifyVendor, async (req, res) => {
       }
     }
 
-    // নতুন মেনু আইটেম তৈরি করা (ডিফল্ট স্ট্যাটাস: pending)
+    // Create menu item with default status 'pending'
     const newMenuItem = formatMenuItemDocument(
       { itemName, category, description, price, location, images: finalImages },
       req.user._id
@@ -96,7 +97,7 @@ router.post('/', verifyToken, verifyVendor, async (req, res) => {
 
 /**
  * GET /api/menu/my-items
- * ভেন্ডরের নিজস্ব সমস্ত মেনু আইটেমের তালিকা দেখা
+ * Fetch all menu items belonging to the authenticated vendor
  */
 router.get('/my-items', verifyToken, verifyVendor, async (req, res) => {
   try {
@@ -121,7 +122,7 @@ router.get('/my-items', verifyToken, verifyVendor, async (req, res) => {
 
 /**
  * GET /api/menu/my-items/:id
- * নির্দিষ্ট একটি মেনু আইটেমের বিস্তারিত দেখা (শুধুমাত্র ওনার ভেন্ডর দেখতে পারবে)
+ * Retrieve single menu item details for owner vendor
  */
 router.get('/my-items/:id', verifyToken, verifyVendor, async (req, res) => {
   try {
@@ -136,7 +137,7 @@ router.get('/my-items/:id', verifyToken, verifyVendor, async (req, res) => {
 
     const item = await collections.menuItems.findOne({
       _id: new ObjectId(id),
-      vendorId: req.user._id, // ওনারশিপ ভেরিফিকেশন
+      vendorId: req.user._id,
     });
 
     if (!item) {
@@ -161,7 +162,7 @@ router.get('/my-items/:id', verifyToken, verifyVendor, async (req, res) => {
 
 /**
  * PATCH /api/menu/my-items/:id
- * মেনু আইটেম আপডেট করা অথবা স্ট্যাটাস পরিবর্তন করা
+ * Update menu item details or toggle active status
  */
 router.patch('/my-items/:id', verifyToken, verifyVendor, async (req, res) => {
   try {
@@ -175,7 +176,7 @@ router.patch('/my-items/:id', verifyToken, verifyVendor, async (req, res) => {
       });
     }
 
-    // ওনারশিপ চেক: আইটেমটি এই ভেন্ডরের কিনা
+    // Verify ownership
     const existingItem = await collections.menuItems.findOne({
       _id: new ObjectId(id),
       vendorId: req.user._id,
@@ -201,13 +202,13 @@ router.patch('/my-items/:id', verifyToken, verifyVendor, async (req, res) => {
     if (location !== undefined) updateDoc.location = location.trim();
     if (images !== undefined) updateDoc.images = Array.isArray(images) ? images : [images];
 
-    // ভেন্ডর কেবল inactive অথবা তার অ্যাপ্রুভড আইটেমকে রিস্টোর করতে পারবে
+    // Status toggle logic
     if (status !== undefined) {
       if ([MENU_STATUS.INACTIVE, MENU_STATUS.APPROVED].includes(status)) {
         updateDoc.status = status;
       }
     } else if (Object.keys(updateDoc).length > 0) {
-      // যদি ইনফরমেশন আপডেট করা হয়, তবে নিরাপত্তার জন্য অ্যাডমিন রিভিউতে পাঠাবে (pending)
+      // Re-review required if item content changed
       updateDoc.status = MENU_STATUS.PENDING;
     }
 
@@ -234,7 +235,7 @@ router.patch('/my-items/:id', verifyToken, verifyVendor, async (req, res) => {
 
 /**
  * DELETE /api/menu/my-items/:id
- * মেনু আইটেম ডিলিট করা
+ * Delete menu item with ownership verification
  */
 router.delete('/my-items/:id', verifyToken, verifyVendor, async (req, res) => {
   try {
@@ -247,7 +248,7 @@ router.delete('/my-items/:id', verifyToken, verifyVendor, async (req, res) => {
       });
     }
 
-    // ওনারশিপ চেক
+    // Ownership check
     const deleteResult = await collections.menuItems.deleteOne({
       _id: new ObjectId(id),
       vendorId: req.user._id,

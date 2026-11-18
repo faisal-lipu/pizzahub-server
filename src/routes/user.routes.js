@@ -7,20 +7,20 @@ import { ROLES } from '../models/schemas.js';
 
 const router = express.Router();
 
-// সব ইউজার ম্যানেজমেন্ট রাউট সুরক্ষিত - শুধুমাত্র অ্যাডমিন এক্সেস করতে পারবে
+// Protect all user management routes - accessible only by Admins
 router.use(verifyToken, verifyAdmin);
 
 /**
  * GET /api/users
- * সব ইউজারদের তালিকা দেখা (সার্চ এবং রোল ফিল্টারিং সহ)
- * Query parameters: ?search=john&role=vendor&isBlocked=false
+ * Fetch all registered users with search and role filtering
+ * Query params: ?search=john&role=vendor&isBlocked=false
  */
 router.get('/', async (req, res) => {
   try {
     const { search, role, isBlocked } = req.query;
     const query = {};
 
-    // নাম অথবা ইমেইল দিয়ে সার্চ করা
+    // Search by name or email
     if (search && search.trim() !== '') {
       query.$or = [
         { name: { $regex: search.trim(), $options: 'i' } },
@@ -28,17 +28,17 @@ router.get('/', async (req, res) => {
       ];
     }
 
-    // নির্দিষ্ট রোল অনুযায়ী ফিল্টার করা (vendor, customer, admin)
+    // Filter by specific role (vendor, customer, admin)
     if (role && Object.values(ROLES).includes(role.toLowerCase())) {
       query.role = role.toLowerCase();
     }
 
-    // ব্লকড বা আনব্লকড ইউজার ফিল্টার করা
+    // Filter by block status
     if (isBlocked !== undefined) {
       query.isBlocked = isBlocked === 'true';
     }
 
-    // নতুন ইউজাররা প্রথমে দেখানোর জন্য sort: { createdAt: -1 }
+    // Sort users newest first
     const users = await collections.users
       .find(query)
       .sort({ createdAt: -1 })
@@ -60,7 +60,7 @@ router.get('/', async (req, res) => {
 
 /**
  * GET /api/users/stats
- * অ্যাডমিন ড্যাশবোর্ডের জন্য ইউজারদের সামগ্রিক পরিসংখ্যান
+ * Aggregated user statistics for Admin Dashboard overview
  */
 router.get('/stats', async (req, res) => {
   try {
@@ -99,15 +99,15 @@ router.get('/stats', async (req, res) => {
 
 /**
  * PATCH /api/users/:id/block
- * ইউজারকে Block অথবা Unblock করা
- * Body: { "isBlocked": true } অথবা { "isBlocked": false }
+ * Block or Unblock a user
+ * Body: { "isBlocked": true } or { "isBlocked": false }
  */
 router.patch('/:id/block', async (req, res) => {
   try {
     const { id } = req.params;
     const { isBlocked } = req.body;
 
-    // আইডি ভ্যালিড MongoDB ObjectId কিনা চেক করা
+    // Validate MongoDB ObjectId format
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -115,7 +115,7 @@ router.patch('/:id/block', async (req, res) => {
       });
     }
 
-    // সেফটি রুল: অ্যাডমিন যেন নিজেকে নিজে ব্লক না করতে পারে
+    // Safety rule: Admin cannot block their own account
     if (req.user._id === id) {
       return res.status(400).json({
         success: false,
@@ -131,7 +131,7 @@ router.patch('/:id/block', async (req, res) => {
       });
     }
 
-    // যদি বডিতে isBlocked দেওয়া থাকে তবে সেটি নেবে, না দিলে টগল করবে (True থাকলে False, False থাকলে True)
+    // Toggle if not explicitly provided
     const newBlockedState = isBlocked !== undefined ? Boolean(isBlocked) : !targetUser.isBlocked;
 
     await collections.users.updateOne(
