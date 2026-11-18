@@ -5,6 +5,7 @@ import cors from 'cors';
 import { connectDB } from './src/config/db.js';
 import authRoutes from './src/routes/auth.routes.js';
 import userRoutes from './src/routes/user.routes.js';
+import menuRoutes from './src/routes/menu.routes.js';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -22,6 +23,7 @@ app.use(express.json());
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/menu', menuRoutes);
 
 // Root health check endpoint
 app.get('/', (req, res) => {
