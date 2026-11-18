@@ -360,4 +360,232 @@ router.patch('/vendor/:id/action', verifyToken, verifyVendor, async (req, res) =
   }
 });
 
+/* ==========================================================================
+   CUSTOMER ORDER ROUTES (Protected by verifyToken)
+   ========================================================================== */
+
+/**
+ * GET /api/orders/my-orders
+ * Retrieve order history for the authenticated customer
+ * Query params: ?status=pending
+ */
+router.get('/my-orders', verifyToken, async (req, res) => {
+  try {
+    const { status } = req.query;
+    const customerId = req.user._id;
+
+    const matchConditions = [
+      {
+        $or: [
+          { customerId: customerId },
+          { customerId: new ObjectId(customerId) },
+        ],
+      },
+    ];
+
+    if (status && Object.values(ORDER_STATUS).includes(status.toLowerCase())) {
+      matchConditions.push({ status: status.toLowerCase() });
+    }
+
+    const pipeline = [
+      { $match: { $and: matchConditions } },
+      // Lookup menu item details
+      {
+        $lookup: {
+          from: 'menuItems',
+          let: { itmId: '$itemId' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $or: [
+                    { $eq: [{ $toString: '$_id' }, '$$itmId'] },
+                    { $eq: ['$_id', '$$itmId'] },
+                  ],
+                },
+              },
+            },
+            {
+              $project: {
+                itemName: 1,
+                category: 1,
+                price: 1,
+                images: 1,
+                location: 1,
+              },
+            },
+          ],
+          as: 'menuItem',
+        },
+      },
+      {
+        $unwind: {
+          path: '$menuItem',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      // Lookup vendor details
+      {
+        $lookup: {
+          from: 'users',
+          let: { vId: '$vendorId' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $or: [
+                    { $eq: [{ $toString: '$_id' }, '$$vId'] },
+                    { $eq: ['$_id', '$$vId'] },
+                  ],
+                },
+              },
+            },
+            {
+              $project: {
+                name: 1,
+                businessName: 1,
+                email: 1,
+                image: 1,
+              },
+            },
+          ],
+          as: 'vendor',
+        },
+      },
+      {
+        $unwind: {
+          path: '$vendor',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      { $sort: { createdAt: -1 } },
+    ];
+
+    const orders = await collections.orders.aggregate(pipeline).toArray();
+
+    return res.status(200).json({
+      success: true,
+      count: orders.length,
+      orders,
+    });
+  } catch (error) {
+    console.error('[Customer Get Orders Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch your orders.',
+    });
+  }
+});
+
+/**
+ * GET /api/orders/my-orders/stats
+ * Aggregated order stats for Customer Dashboard overview
+ */
+router.get('/my-orders/stats', verifyToken, async (req, res) => {
+  try {
+    const customerId = req.user._id;
+    const customerMatch = {
+      $or: [
+        { customerId: customerId },
+        { customerId: new ObjectId(customerId) },
+      ],
+    };
+
+    const [totalOrders, pendingOrders, acceptedOrders, rejectedOrders, cancelledOrders] =
+      await Promise.all([
+        collections.orders.countDocuments(customerMatch),
+        collections.orders.countDocuments({ ...customerMatch, status: ORDER_STATUS.PENDING }),
+        collections.orders.countDocuments({ ...customerMatch, status: ORDER_STATUS.ACCEPTED }),
+        collections.orders.countDocuments({ ...customerMatch, status: ORDER_STATUS.REJECTED }),
+        collections.orders.countDocuments({ ...customerMatch, status: ORDER_STATUS.CANCELLED }),
+      ]);
+
+    return res.status(200).json({
+      success: true,
+      stats: {
+        totalOrders,
+        pendingOrders,
+        acceptedOrders,
+        rejectedOrders,
+        cancelledOrders,
+      },
+    });
+  } catch (error) {
+    console.error('[Customer Order Stats Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to load order statistics.',
+    });
+  }
+});
+
+/**
+ * PATCH /api/orders/my-orders/:id/cancel
+ * Cancel a pending order by customer
+ * Rule: Only pending orders can be cancelled; accepted, rejected, or already cancelled orders cannot be cancelled
+ */
+router.patch('/my-orders/:id/cancel', verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID format.',
+      });
+    }
+
+    const order = await collections.orders.findOne({ _id: new ObjectId(id) });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found.',
+      });
+    }
+
+    // Ownership check: Customers cannot change or cancel another customer's order
+    if (order.customerId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized. You can only cancel your own orders.',
+      });
+    }
+
+    // Rule: Cannot cancel an order that is already accepted, rejected, or cancelled
+    if (order.status !== ORDER_STATUS.PENDING) {
+      return res.status(400).json({
+        success: false,
+        code: 'CANNOT_CANCEL_ORDER',
+        message: `Order cannot be cancelled because its current status is '${order.status}'. Only pending orders can be cancelled.`,
+      });
+    }
+
+    // Update status to cancelled
+    await collections.orders.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          status: ORDER_STATUS.CANCELLED,
+          cancelledAt: new Date(),
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Order has been successfully cancelled.',
+      orderId: id,
+      newStatus: ORDER_STATUS.CANCELLED,
+    });
+  } catch (error) {
+    console.error('[Cancel Order Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to cancel order.',
+    });
+  }
+});
+
 export default router;
