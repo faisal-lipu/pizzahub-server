@@ -448,5 +448,198 @@ router.delete('/admin/:id', verifyToken, verifyAdmin, async (req, res) => {
   }
 });
 
+/* ==========================================================================
+   PUBLIC MENU ROUTES (Accessible by everyone without login)
+   ========================================================================== */
+
+/**
+ * GET /api/menu
+ * Public route to browse approved menu items with search, filter, and sorting
+ * Challenge #1: Advanced search and sorting by price (asc / desc)
+ * Query params: ?search=cheese&category=Meat%20Lovers&location=Dhaka&sortBy=price&order=asc&limit=6
+ */
+router.get('/', async (req, res) => {
+  try {
+    const { search, category, location, sortBy, order, limit, page } = req.query;
+
+    // Base query: Only approved items are visible to the public
+    const query = { status: MENU_STATUS.APPROVED };
+
+    // Search by item name or description
+    if (search && search.trim() !== '') {
+      query.$or = [
+        { itemName: { $regex: search.trim(), $options: 'i' } },
+        { description: { $regex: search.trim(), $options: 'i' } },
+      ];
+    }
+
+    // Filter by category
+    if (category && category.trim() !== '' && category.toLowerCase() !== 'all') {
+      query.category = category.trim();
+    }
+
+    // Filter by location (city or restaurant area)
+    if (location && location.trim() !== '') {
+      query.location = { $regex: location.trim(), $options: 'i' };
+    }
+
+    // Challenge #1: Dynamic price sorting (Ascending / Descending)
+    const sortCriteria = {};
+    if (sortBy === 'price') {
+      sortCriteria.price = order === 'asc' ? 1 : -1;
+    } else {
+      sortCriteria.createdAt = -1; // Default to newest items first
+    }
+
+    // Aggregation pipeline to include vendor public profile (name, businessName, subscription badge)
+    const pipeline = [
+      { $match: query },
+      {
+        $lookup: {
+          from: 'users',
+          let: { vId: '$vendorId' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $or: [
+                    { $eq: [{ $toString: '$_id' }, '$$vId'] },
+                    { $eq: ['$_id', '$$vId'] },
+                  ],
+                },
+              },
+            },
+            {
+              $project: {
+                name: 1,
+                email: 1,
+                businessName: 1,
+                image: 1,
+                subscriptionPlan: 1,
+              },
+            },
+          ],
+          as: 'vendor',
+        },
+      },
+      {
+        $unwind: {
+          path: '$vendor',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      { $sort: sortCriteria },
+    ];
+
+    // Pagination / Limit handling (e.g. limit=6 for Homepage Featured section)
+    const limitNum = parseInt(limit, 10);
+    const pageNum = parseInt(page, 10) || 1;
+
+    if (!isNaN(limitNum) && limitNum > 0) {
+      const skipNum = (pageNum - 1) * limitNum;
+      if (skipNum > 0) {
+        pipeline.push({ $skip: skipNum });
+      }
+      pipeline.push({ $limit: limitNum });
+    }
+
+    const items = await collections.menuItems.aggregate(pipeline).toArray();
+    const totalCount = await collections.menuItems.countDocuments(query);
+
+    return res.status(200).json({
+      success: true,
+      count: items.length,
+      totalCount,
+      items,
+    });
+  } catch (error) {
+    console.error('[Public Get Menu Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch menu items.',
+    });
+  }
+});
+
+/**
+ * GET /api/menu/:id
+ * Public route to view single approved item details with vendor information
+ */
+router.get('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid menu item ID format.',
+      });
+    }
+
+    const pipeline = [
+      {
+        $match: {
+          _id: new ObjectId(id),
+          status: MENU_STATUS.APPROVED,
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          let: { vId: '$vendorId' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $or: [
+                    { $eq: [{ $toString: '$_id' }, '$$vId'] },
+                    { $eq: ['$_id', '$$vId'] },
+                  ],
+                },
+              },
+            },
+            {
+              $project: {
+                name: 1,
+                email: 1,
+                businessName: 1,
+                image: 1,
+                subscriptionPlan: 1,
+              },
+            },
+          ],
+          as: 'vendor',
+        },
+      },
+      {
+        $unwind: {
+          path: '$vendor',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+    ];
+
+    const result = await collections.menuItems.aggregate(pipeline).toArray();
+
+    if (!result || result.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Menu item not found or unavailable.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      item: result[0],
+    });
+  } catch (error) {
+    console.error('[Public Single Item Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve menu item details.',
+    });
+  }
+});
+
 export default router;
 
