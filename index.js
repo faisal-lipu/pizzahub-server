@@ -13,14 +13,25 @@ import transactionRoutes from './src/routes/transaction.routes.js';
 const app = express();
 const port = process.env.PORT || 5000;
 
-// Middlewares
+// CORS middleware supporting local development and all Vercel client domains
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    process.env.CLIENT_URL
-  ].filter(Boolean),
-  credentials: true
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
+// Ensure database connection is active on serverless invocations
+app.use(async (req, res, next) => {
+  try {
+    if (process.env.MONGODB_URI) {
+      await connectDB();
+    }
+  } catch (err) {
+    console.error('[DB Middleware Error]:', err.message);
+  }
+  next();
+});
 
 // Stripe Webhook must receive raw body buffer before express.json() parser
 app.post(
@@ -81,6 +92,9 @@ async function startServer() {
   });
 }
 
-startServer();
+// Start standalone server only when not running in a Vercel serverless environment
+if (!process.env.VERCEL) {
+  startServer();
+}
 
 export default app;
