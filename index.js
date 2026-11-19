@@ -7,7 +7,7 @@ import authRoutes from './src/routes/auth.routes.js';
 import userRoutes from './src/routes/user.routes.js';
 import menuRoutes from './src/routes/menu.routes.js';
 import orderRoutes from './src/routes/order.routes.js';
-import paymentRoutes from './src/routes/payment.routes.js';
+import paymentRoutes, { handleStripeWebhook } from './src/routes/payment.routes.js';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -20,6 +20,14 @@ app.use(cors({
   ].filter(Boolean),
   credentials: true
 }));
+
+// Stripe Webhook must receive raw body buffer before express.json() parser
+app.post(
+  '/api/payment/webhook',
+  express.raw({ type: 'application/json' }),
+  handleStripeWebhook
+);
+
 app.use(express.json());
 
 // Routes
