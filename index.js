@@ -8,6 +8,7 @@ import userRoutes from './src/routes/user.routes.js';
 import menuRoutes from './src/routes/menu.routes.js';
 import orderRoutes from './src/routes/order.routes.js';
 import paymentRoutes, { handleStripeWebhook } from './src/routes/payment.routes.js';
+import transactionRoutes from './src/routes/transaction.routes.js';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -36,6 +37,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/payment', paymentRoutes);
+app.use('/api/transactions', transactionRoutes);
 
 // Root health check endpoint
 app.get('/', (req, res) => {
