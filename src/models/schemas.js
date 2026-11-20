@@ -74,11 +74,29 @@ export function formatMenuItemDocument(data, vendorId) {
     throw new Error('Missing required fields for menu item (itemName, category, price).');
   }
 
-  const images = Array.isArray(data.images) && data.images.length > 0
+  // Clean and extract real image URLs if Google Image search links were provided
+  const cleanImageUrl = (url) => {
+    if (!url || typeof url !== 'string') return 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800&auto=format&fit=crop&q=80';
+    const trimmed = url.trim();
+    if (trimmed.includes('google.com/imgres') || trimmed.includes('imgurl=')) {
+      try {
+        const parsed = new URL(trimmed);
+        const imgurl = parsed.searchParams.get('imgurl');
+        if (imgurl && imgurl.startsWith('http')) return imgurl;
+      } catch {
+        // Fallback
+      }
+    }
+    return trimmed || 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800&auto=format&fit=crop&q=80';
+  };
+
+  const rawImages = Array.isArray(data.images) && data.images.length > 0
     ? data.images
     : data.image
     ? [data.image]
     : ['https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800&auto=format&fit=crop&q=80'];
+
+  const images = rawImages.map(cleanImageUrl);
 
   return {
     vendorId, // ObjectId or string ref to users collection
