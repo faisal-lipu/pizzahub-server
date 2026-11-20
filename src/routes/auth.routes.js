@@ -13,7 +13,7 @@ const router = express.Router();
  */
 router.post('/jwt', async (req, res) => {
   try {
-    const { email, name, image, role, businessName } = req.body;
+    const { email, name, image, role, businessName, isLogin } = req.body;
 
     if (!email) {
       return res.status(400).json({
@@ -26,6 +26,14 @@ router.post('/jwt', async (req, res) => {
     let user = await collections.users.findOne({ email: normalizedEmail });
 
     if (!user) {
+      if (isLogin) {
+        return res.status(404).json({
+          success: false,
+          code: 'USER_NOT_FOUND',
+          message: 'No account found with this email. Please create an account first.',
+        });
+      }
+
       // Secure role assignment: Public registration cannot create Admin
       const sanitizedRole = role === ROLES.VENDOR ? ROLES.VENDOR : ROLES.CUSTOMER;
 
