@@ -2,7 +2,7 @@ import express from 'express';
 import { ObjectId } from 'mongodb';
 import { collections } from '../config/db.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
-import { verifyVendor } from '../middlewares/verifyRole.js';
+import { verifyVendor, verifyCustomer } from '../middlewares/verifyRole.js';
 import {
   ORDER_STATUS,
   MENU_STATUS,
@@ -17,7 +17,7 @@ const router = express.Router();
  * Create a new customer order for an approved menu item
  * Enforces duplicate active order prevention and role ownership restrictions
  */
-router.post('/', verifyToken, async (req, res) => {
+router.post('/', verifyToken, verifyCustomer, async (req, res) => {
   try {
     const { itemId, deliveryDate, deliveryAddress, message } = req.body;
 
@@ -369,7 +369,7 @@ router.patch(['/vendor/:id/action', '/:id/:action', '/vendor/:id/:action'], veri
  * Retrieve order history for the authenticated customer
  * Query params: ?status=pending
  */
-router.get('/my-orders', verifyToken, async (req, res) => {
+router.get('/my-orders', verifyToken, verifyCustomer, async (req, res) => {
   try {
     const { status } = req.query;
     const customerId = req.user._id;
@@ -481,7 +481,7 @@ router.get('/my-orders', verifyToken, async (req, res) => {
  * GET /api/orders/my-orders/stats
  * Aggregated order stats for Customer Dashboard overview
  */
-router.get('/my-orders/stats', verifyToken, async (req, res) => {
+router.get('/my-orders/stats', verifyToken, verifyCustomer, async (req, res) => {
   try {
     const customerId = req.user._id;
     const customerMatch = {
@@ -524,7 +524,7 @@ router.get('/my-orders/stats', verifyToken, async (req, res) => {
  * Cancel a pending order by customer
  * Rule: Only pending orders can be cancelled; accepted, rejected, or already cancelled orders cannot be cancelled
  */
-router.patch('/my-orders/:id/cancel', verifyToken, async (req, res) => {
+router.patch('/my-orders/:id/cancel', verifyToken, verifyCustomer, async (req, res) => {
   try {
     const { id } = req.params;
 
