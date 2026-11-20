@@ -164,7 +164,7 @@ router.get('/my-items/:id', verifyToken, verifyVendor, async (req, res) => {
  * PATCH /api/menu/my-items/:id
  * Update menu item details or toggle active status
  */
-router.patch('/my-items/:id', verifyToken, verifyVendor, async (req, res) => {
+router.patch(['/my-items/:id', '/:id'], verifyToken, verifyVendor, async (req, res) => {
   try {
     const { id } = req.params;
     const { itemName, category, description, price, location, images, status } = req.body;
