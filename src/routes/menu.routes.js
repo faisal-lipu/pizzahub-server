@@ -530,11 +530,14 @@ router.get('/', async (req, res) => {
     // Base query: Only approved items are visible to the public
     const query = { status: MENU_STATUS.APPROVED };
 
-    // Search by item name or description
+    // Search by item name, description, or category
     if (search && search.trim() !== '') {
+      const searchRegex = { $regex: search.trim(), $options: 'i' };
       query.$or = [
-        { itemName: { $regex: search.trim(), $options: 'i' } },
-        { description: { $regex: search.trim(), $options: 'i' } },
+        { itemName: searchRegex },
+        { name: searchRegex },
+        { description: searchRegex },
+        { category: searchRegex },
       ];
     }
 
@@ -549,10 +552,14 @@ router.get('/', async (req, res) => {
       query.location = { $regex: location.trim(), $options: 'i' };
     }
 
-    // Challenge #1: Dynamic price sorting (Ascending / Descending)
+    // Challenge #1: Advanced price sorting (Ascending / Descending)
     const sortCriteria = {};
-    if (sortBy === 'price') {
-      sortCriteria.price = order === 'asc' ? 1 : -1;
+    const sortParam = (sortBy || req.query.sort || '').toLowerCase();
+    const orderParam = (order || req.query.sortOrder || '').toLowerCase();
+
+    if (sortParam === 'price' || sortParam.includes('price')) {
+      const isAsc = orderParam === 'asc' || sortParam.includes('asc') || sortParam === 'price_asc';
+      sortCriteria.price = isAsc ? 1 : -1;
     } else {
       sortCriteria.createdAt = -1; // Default to newest items first
     }
