@@ -118,8 +118,15 @@ router.post('/create-checkout-session', verifyToken, verifyVendor, async (req, r
         message: 'Your account is already on the Premium subscription plan.',
       });
     }
-
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+    let reqOrigin = req.body?.clientUrl || req.headers.origin;
+    if (!reqOrigin && req.headers.referer) {
+      try {
+        reqOrigin = new URL(req.headers.referer).origin;
+      } catch (e) {
+        // ignore invalid referer URL
+      }
+    }
+    const clientUrl = reqOrigin || process.env.CLIENT_URL || 'https://pizzahub-client-beta.vercel.app';
     const hasLiveStripeKey = process.env.STRIPE_SECRET_KEY && !process.env.STRIPE_SECRET_KEY.includes('placeholder');
 
     if (hasLiveStripeKey) {
