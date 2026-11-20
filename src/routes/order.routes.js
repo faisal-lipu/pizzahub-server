@@ -67,24 +67,41 @@ router.post('/', verifyToken, async (req, res) => {
     }
 
     // Normalize delivery date string (YYYY-MM-DD)
-    const normalizedDeliveryDate = new Date(deliveryDate).toISOString().split('T')[0];
+    const rawDateStr = String(deliveryDate).trim();
+    const normalizedDeliveryDate = rawDateStr.includes('T')
+      ? rawDateStr.split('T')[0]
+      : rawDateStr.length >= 10
+      ? rawDateStr.slice(0, 10)
+      : new Date(deliveryDate).toISOString().split('T')[0];
 
     // Rule: Prevent duplicate active orders for the same item and delivery date
+    const customerIdStr = req.user._id.toString();
+    const itemIdStr = menuItem._id.toString();
+
     const duplicateOrder = await collections.orders.findOne({
-      customerId: req.user._id,
-      $or: [
-        { itemId: menuItem._id.toString() },
-        { itemId: menuItem._id },
+      $and: [
+        {
+          $or: [
+            { customerId: customerIdStr },
+            { customerId: new ObjectId(customerIdStr) },
+          ],
+        },
+        {
+          $or: [
+            { itemId: itemIdStr },
+            { itemId: new ObjectId(itemIdStr) },
+          ],
+        },
+        { deliveryDate: normalizedDeliveryDate },
+        { status: { $in: [ORDER_STATUS.PENDING, ORDER_STATUS.ACCEPTED] } },
       ],
-      deliveryDate: normalizedDeliveryDate,
-      status: { $in: [ORDER_STATUS.PENDING, ORDER_STATUS.ACCEPTED] },
     });
 
     if (duplicateOrder) {
       return res.status(409).json({
         success: false,
         code: 'DUPLICATE_ACTIVE_ORDER',
-        message: `You already have an active order (${duplicateOrder.status}) for this item on ${normalizedDeliveryDate}.`,
+        message: `You already have an active order (${duplicateOrder.status}) for "${menuItem.itemName}" on ${normalizedDeliveryDate}. Duplicate orders for the same date are not allowed.`,
       });
     }
 
