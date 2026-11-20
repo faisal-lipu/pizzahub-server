@@ -176,16 +176,22 @@ router.patch(['/my-items/:id', '/:id'], verifyToken, verifyVendor, async (req, r
       });
     }
 
-    // Verify ownership
+    // Verify resource ownership before update
     const existingItem = await collections.menuItems.findOne({
       _id: new ObjectId(id),
-      vendorId: req.user._id,
     });
 
     if (!existingItem) {
       return res.status(404).json({
         success: false,
-        message: 'Menu item not found or unauthorized to update.',
+        message: 'Menu item not found.',
+      });
+    }
+
+    if (existingItem.vendorId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You do not own this menu item and cannot update it.',
       });
     }
 
@@ -248,18 +254,26 @@ router.delete(['/my-items/:id', '/:id'], verifyToken, verifyVendor, async (req, 
       });
     }
 
-    // Ownership check
-    const deleteResult = await collections.menuItems.deleteOne({
+    // Verify resource ownership before delete
+    const existingItem = await collections.menuItems.findOne({
       _id: new ObjectId(id),
-      vendorId: req.user._id,
     });
 
-    if (deleteResult.deletedCount === 0) {
+    if (!existingItem) {
       return res.status(404).json({
         success: false,
-        message: 'Menu item not found or unauthorized to delete.',
+        message: 'Menu item not found.',
       });
     }
+
+    if (existingItem.vendorId.toString() !== req.user._id.toString() && req.user.role !== ROLES.ADMIN) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You do not own this menu item and cannot delete it.',
+      });
+    }
+
+    await collections.menuItems.deleteOne({ _id: new ObjectId(id) });
 
     return res.status(200).json({
       success: true,
