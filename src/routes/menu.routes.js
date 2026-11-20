@@ -357,11 +357,11 @@ router.get('/admin/stats', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 /**
- * PATCH /api/menu/admin/:id/status
+ * PATCH /api/menu/admin/:id/status (and /api/menu/:id/status)
  * Review menu item: Approve, Reject, or change published status
  * Body: { "status": "approved" | "rejected" | "inactive" | "pending" }
  */
-router.patch('/admin/:id/status', verifyToken, verifyAdmin, async (req, res) => {
+router.patch(['/admin/:id/status', '/:id/status'], verifyToken, verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -413,7 +413,7 @@ router.patch('/admin/:id/status', verifyToken, verifyAdmin, async (req, res) => 
  * DELETE /api/menu/admin/:id
  * Delete an inappropriate menu item (Admin privilege)
  */
-router.delete('/admin/:id', verifyToken, verifyAdmin, async (req, res) => {
+router.delete(['/admin/:id', '/admin/item/:id'], verifyToken, verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
