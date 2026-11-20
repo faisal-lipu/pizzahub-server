@@ -19,13 +19,20 @@ const router = express.Router();
  */
 router.post('/', verifyToken, verifyVendor, async (req, res) => {
   try {
-    const { itemName, category, description, price, location, images, image } = req.body;
+    const rawName = (req.body.itemName || req.body.name || '').trim();
+    const category = (req.body.category || '').trim();
+    const description = (req.body.description || '').trim();
+    const price = req.body.price;
+    const location = (req.body.location || req.user.businessName || 'Downtown Kitchen, New York').trim();
+    const images = req.body.images;
+    const image = req.body.image;
+    const preparationTime = parseInt(req.body.preparationTime, 10) || 15;
 
     // Validate required fields
-    if (!itemName || !category || price === undefined || !location) {
+    if (!rawName || !category || price === undefined) {
       return res.status(400).json({
         success: false,
-        message: 'Item name, category, price, and location are required.',
+        message: 'Item name, category, and price are required.',
       });
     }
 
@@ -37,19 +44,12 @@ router.post('/', verifyToken, verifyVendor, async (req, res) => {
       });
     }
 
-    // Validate image URL (ImgBB)
+    // Normalize image URLs
     const finalImages = Array.isArray(images) && images.length > 0
       ? images
       : image
       ? [image]
-      : [];
-
-    if (finalImages.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'At least one menu item image is required (ImgBB URL).',
-      });
-    }
+      : ['https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800&auto=format&fit=crop&q=80'];
 
     // Check vendor subscription plan
     const vendor = await collections.users.findOne({ _id: new ObjectId(req.user._id) });
@@ -75,7 +75,7 @@ router.post('/', verifyToken, verifyVendor, async (req, res) => {
 
     // Create menu item with default status 'pending'
     const newMenuItem = formatMenuItemDocument(
-      { itemName, category, description, price, location, images: finalImages },
+      { itemName: rawName, category, description, price, location, images: finalImages, preparationTime },
       req.user._id
     );
 
@@ -96,10 +96,10 @@ router.post('/', verifyToken, verifyVendor, async (req, res) => {
 });
 
 /**
- * GET /api/menu/my-items
+ * GET /api/menu/my-items (and /api/menu/vendor/my-items)
  * Fetch all menu items belonging to the authenticated vendor
  */
-router.get('/my-items', verifyToken, verifyVendor, async (req, res) => {
+router.get(['/my-items', '/vendor/my-items'], verifyToken, verifyVendor, async (req, res) => {
   try {
     const items = await collections.menuItems
       .find({ vendorId: req.user._id })
@@ -237,7 +237,7 @@ router.patch('/my-items/:id', verifyToken, verifyVendor, async (req, res) => {
  * DELETE /api/menu/my-items/:id
  * Delete menu item with ownership verification
  */
-router.delete('/my-items/:id', verifyToken, verifyVendor, async (req, res) => {
+router.delete(['/my-items/:id', '/:id'], verifyToken, verifyVendor, async (req, res) => {
   try {
     const { id } = req.params;
 

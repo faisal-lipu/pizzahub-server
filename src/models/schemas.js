@@ -16,6 +16,11 @@ export const MENU_CATEGORIES = Object.freeze([
   'Specialty / Gourmet Pizzas',
   'Sides & Appetizers',
   'Beverages & Desserts',
+  'Pepperoni',
+  'Veggie',
+  'Chicken',
+  'Cheese',
+  'Special',
 ]);
 
 export const MENU_STATUS = Object.freeze({
@@ -62,24 +67,31 @@ export function formatUserDocument(data) {
  * Validates and formats menu item document fields
  */
 export function formatMenuItemDocument(data, vendorId) {
-  if (!data.itemName || !data.category || data.price === undefined || !data.location) {
-    throw new Error('Missing required fields for menu item (itemName, category, price, location).');
+  const finalName = (data.itemName || data.name || '').trim();
+  const finalLocation = (data.location || 'Downtown Kitchen, New York').trim();
+
+  if (!finalName || !data.category || data.price === undefined) {
+    throw new Error('Missing required fields for menu item (itemName, category, price).');
   }
 
-  const images = Array.isArray(data.images)
+  const images = Array.isArray(data.images) && data.images.length > 0
     ? data.images
     : data.image
     ? [data.image]
-    : [];
+    : ['https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800&auto=format&fit=crop&q=80'];
 
   return {
     vendorId, // ObjectId or string ref to users collection
-    itemName: data.itemName.trim(),
+    itemName: finalName,
+    name: finalName,
     category: data.category.trim(),
     description: data.description?.trim() || '',
     price: Number(data.price),
-    location: data.location.trim(),
+    location: finalLocation,
     images: images,
+    image: images[0],
+    rating: Number(data.rating || 4.9),
+    preparationTime: Number(data.preparationTime || 15),
     status: MENU_STATUS.PENDING, // Default status pending until approved by admin
     createdAt: new Date(),
   };

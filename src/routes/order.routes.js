@@ -128,7 +128,7 @@ router.post('/', verifyToken, async (req, res) => {
  * Retrieve incoming customer orders for the authenticated vendor
  * Query params: ?status=pending
  */
-router.get('/vendor', verifyToken, verifyVendor, async (req, res) => {
+router.get(['/vendor', '/vendor/orders'], verifyToken, verifyVendor, async (req, res) => {
   try {
     const { status } = req.query;
     const vendorId = req.user._id;
@@ -280,10 +280,10 @@ router.get('/vendor/stats', verifyToken, verifyVendor, async (req, res) => {
  * Rule: Only pending orders can be accepted or rejected, and only once
  * Body: { "action": "accept" } or { "action": "reject" }
  */
-router.patch('/vendor/:id/action', verifyToken, verifyVendor, async (req, res) => {
+router.patch(['/vendor/:id/action', '/:id/:action', '/vendor/:id/:action'], verifyToken, verifyVendor, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { action, status } = req.body;
+    const { id, action: paramAction } = req.params;
+    const { action: bodyAction, status } = req.body || {};
 
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -292,8 +292,8 @@ router.patch('/vendor/:id/action', verifyToken, verifyVendor, async (req, res) =
       });
     }
 
-    // Determine target action status
-    const requestedAction = (action || status || '').toLowerCase();
+    // Determine target action status from param or body
+    const requestedAction = (paramAction || bodyAction || status || '').toLowerCase();
     let targetStatus;
 
     if (requestedAction === 'accept' || requestedAction === ORDER_STATUS.ACCEPTED) {
