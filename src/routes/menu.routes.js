@@ -473,9 +473,10 @@ router.get('/', async (req, res) => {
       ];
     }
 
-    // Filter by category
+    // Filter by category (case-insensitive)
     if (category && category.trim() !== '' && category.toLowerCase() !== 'all') {
-      query.category = category.trim();
+      const escapedCat = category.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.category = { $regex: new RegExp(`^${escapedCat}$`, 'i') };
     }
 
     // Filter by location (city or restaurant area)
