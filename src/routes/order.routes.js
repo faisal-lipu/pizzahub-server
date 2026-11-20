@@ -382,11 +382,11 @@ router.patch(['/vendor/:id/action', '/:id/:action', '/vendor/:id/:action'], veri
    ========================================================================== */
 
 /**
- * GET /api/orders/my-orders
+ * GET /api/orders/my-orders (and GET /api/orders)
  * Retrieve order history for the authenticated customer
  * Query params: ?status=pending
  */
-router.get('/my-orders', verifyToken, verifyCustomer, async (req, res) => {
+router.get(['/my-orders', '/'], verifyToken, async (req, res) => {
   try {
     const { status } = req.query;
     const customerId = req.user._id;
