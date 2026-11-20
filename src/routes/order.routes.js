@@ -17,7 +17,7 @@ const router = express.Router();
  * Create a new customer order for an approved menu item
  * Enforces duplicate active order prevention and role ownership restrictions
  */
-router.post('/', verifyToken, verifyCustomer, async (req, res) => {
+router.post('/', verifyToken, async (req, res) => {
   try {
     const { itemId, deliveryDate, deliveryAddress, message } = req.body;
 
