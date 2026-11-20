@@ -13,6 +13,9 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder'
   apiVersion: '2023-10-16',
 });
 
+// In-memory mock session store (Strictly prevents creating unnecessary database collections in MongoDB)
+const mockSessions = new Map();
+
 /**
  * Handle Stripe Webhook Events
  * Requirement 2: Verify payment events with Stripe webhooks
@@ -323,10 +326,10 @@ router.post('/create-checkout-session', verifyToken, verifyVendor, async (req, r
     }
 
     // Fallback: Development Stripe Checkout Sandbox Session
-    // Requirement 1: Store mock session in DB with 'pending' status so frontend cannot blindly activate
+    // Stored in in-memory map to strictly prevent creating extra MongoDB collections
     const mockSessionId = `cs_test_mock_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-    await collections.mockCheckoutSessions.insertOne({
+    mockSessions.set(mockSessionId, {
       sessionId: mockSessionId,
       vendorId: vendorId,
       vendorEmail: vendorEmail,
@@ -368,7 +371,7 @@ router.post('/mock-confirm-payment', verifyToken, verifyVendor, async (req, res)
       return res.status(400).json({ success: false, message: 'Session ID is required.' });
     }
 
-    const mockSession = await collections.mockCheckoutSessions.findOne({ sessionId });
+    const mockSession = mockSessions.get(sessionId);
     if (!mockSession) {
       return res.status(404).json({ success: false, message: 'Mock checkout session not found.' });
     }
@@ -386,10 +389,8 @@ router.post('/mock-confirm-payment', verifyToken, verifyVendor, async (req, res)
     }
 
     // Mark session as paid
-    await collections.mockCheckoutSessions.updateOne(
-      { sessionId },
-      { $set: { status: 'paid', paidAt: new Date() } }
-    );
+    mockSession.status = 'paid';
+    mockSession.paidAt = new Date();
 
     return res.status(200).json({
       success: true,
@@ -461,8 +462,8 @@ router.post('/verify-session', verifyToken, verifyVendor, async (req, res) => {
       }
     } else {
       // Mock / Development Sandbox verification
-      // Requirement 1: Must exist in mockCheckoutSessions and have status === 'paid'
-      const mockSession = await collections.mockCheckoutSessions.findOne({ sessionId });
+      // Must exist in mockSessions map and have status === 'paid'
+      const mockSession = mockSessions.get(sessionId);
 
       if (!mockSession) {
         return res.status(400).json({

@@ -51,9 +51,6 @@ export const collections = {
   },
   get transactions() {
     return getDB().collection('transactions');
-  },
-  get mockCheckoutSessions() {
-    return getDB().collection('mockCheckoutSessions');
   }
 };
 
