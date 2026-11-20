@@ -51,9 +51,9 @@ router.post('/', verifyToken, verifyVendor, async (req, res) => {
       ? [image]
       : ['https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800&auto=format&fit=crop&q=80'];
 
-    // Check vendor subscription plan
-    const vendor = await collections.users.findOne({ _id: new ObjectId(req.user._id) });
-    const isPremium = vendor?.subscriptionPlan === SUBSCRIPTION_PLANS.PREMIUM;
+    // Check vendor subscription plan (strictly verifies active expiration)
+    const isPremium = req.user.subscriptionPlan === SUBSCRIPTION_PLANS.PREMIUM &&
+      (!req.user.subscriptionExpiresAt || new Date(req.user.subscriptionExpiresAt) > new Date());
 
     // Free plan rule: maximum 3 items (excluding rejected ones)
     if (!isPremium) {

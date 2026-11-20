@@ -61,6 +61,31 @@ export async function verifyToken(req, res, next) {
       });
     }
 
+    // Subscription Security: Check and handle subscription expiration
+    let currentPlan = user.subscriptionPlan || 'free';
+    let subscriptionStatus = user.subscriptionStatus || (currentPlan === 'premium' ? 'active' : 'inactive');
+    let expiresAt = user.subscriptionExpiresAt ? new Date(user.subscriptionExpiresAt) : null;
+
+    if (currentPlan === 'premium' && expiresAt && expiresAt < new Date()) {
+      // Lazy auto-downgrade expired subscription to free
+      currentPlan = 'free';
+      subscriptionStatus = 'expired';
+      try {
+        await collections.users.updateOne(
+          { _id: user._id },
+          {
+            $set: {
+              subscriptionPlan: 'free',
+              subscriptionStatus: 'expired',
+              updatedAt: new Date(),
+            },
+          }
+        );
+      } catch (downgradeErr) {
+        console.error('[verifyToken Auto-Downgrade Error]:', downgradeErr.message);
+      }
+    }
+
     // Attach verified user to request
     req.user = {
       _id: user._id.toString(),
@@ -68,8 +93,9 @@ export async function verifyToken(req, res, next) {
       email: user.email,
       role: user.role,
       businessName: user.businessName || null,
-      subscriptionPlan: user.subscriptionPlan || 'free',
-      subscriptionExpiresAt: user.subscriptionExpiresAt || null,
+      subscriptionPlan: currentPlan,
+      subscriptionStatus: subscriptionStatus,
+      subscriptionExpiresAt: currentPlan === 'premium' ? expiresAt : null,
       isBlocked: user.isBlocked || false,
     };
 
