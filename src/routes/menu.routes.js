@@ -289,27 +289,78 @@ router.get('/admin/all', verifyToken, verifyAdmin, async (req, res) => {
     const query = {};
 
     // Filter by item approval status
-    if (status && Object.values(MENU_STATUS).includes(status.toLowerCase())) {
-      query.status = status.toLowerCase();
+    if (status && status.trim() !== '' && status.toLowerCase() !== 'all') {
+      const s = status.toLowerCase();
+      if (s === 'pending' || s === 'pending_approval') {
+        query.status = { $in: ['pending', 'pending_approval'] };
+      } else {
+        query.status = s;
+      }
     }
 
     // Filter by category
-    if (category && MENU_CATEGORIES.includes(category)) {
-      query.category = category;
+    if (category && category.trim() !== '' && category.toLowerCase() !== 'all') {
+      const escapedCat = category.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.category = { $regex: new RegExp(`^${escapedCat}$`, 'i') };
     }
 
-    // Search by item name or location
+    const pipeline = [
+      { $match: query },
+      {
+        $lookup: {
+          from: 'users',
+          let: { vId: '$vendorId' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $or: [
+                    { $eq: [{ $toString: '$_id' }, '$$vId'] },
+                    { $eq: ['$_id', '$$vId'] },
+                  ],
+                },
+              },
+            },
+            {
+              $project: {
+                name: 1,
+                email: 1,
+                businessName: 1,
+                image: 1,
+                subscriptionPlan: 1,
+              },
+            },
+          ],
+          as: 'vendor',
+        },
+      },
+      {
+        $unwind: {
+          path: '$vendor',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      { $sort: { createdAt: -1 } },
+    ];
+
     if (search && search.trim() !== '') {
-      query.$or = [
-        { itemName: { $regex: search.trim(), $options: 'i' } },
-        { location: { $regex: search.trim(), $options: 'i' } },
-      ];
+      const s = search.trim();
+      pipeline.push({
+        $match: {
+          $or: [
+            { itemName: { $regex: s, $options: 'i' } },
+            { name: { $regex: s, $options: 'i' } },
+            { location: { $regex: s, $options: 'i' } },
+            { category: { $regex: s, $options: 'i' } },
+            { 'vendor.name': { $regex: s, $options: 'i' } },
+            { 'vendor.email': { $regex: s, $options: 'i' } },
+            { 'vendor.businessName': { $regex: s, $options: 'i' } },
+          ],
+        },
+      });
     }
 
-    const items = await collections.menuItems
-      .find(query)
-      .sort({ createdAt: -1 })
-      .toArray();
+    const items = await collections.menuItems.aggregate(pipeline).toArray();
 
     return res.status(200).json({
       success: true,
