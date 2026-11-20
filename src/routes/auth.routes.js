@@ -107,11 +107,31 @@ router.get('/me', verifyToken, async (req, res) => {
  */
 router.patch('/profile', verifyToken, async (req, res) => {
   try {
-    const { name, image, businessName } = req.body;
+    const { name, image, businessName, phone, address, role, subscriptionPlan, subscriptionStatus } = req.body;
+
+    // Security Rule: Users must not be able to change their own role or subscription status through profile updates
+    if (role !== undefined || subscriptionPlan !== undefined || subscriptionStatus !== undefined) {
+      return res.status(403).json({
+        success: false,
+        message: 'Security Alert: You are not authorized to modify your role or subscription status through profile updates.',
+      });
+    }
+
     const updateDoc = {};
 
-    if (name !== undefined) updateDoc.name = name.trim();
+    if (name !== undefined) {
+      if (!name.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Name cannot be empty.',
+        });
+      }
+      updateDoc.name = name.trim();
+    }
+
     if (image !== undefined) updateDoc.image = image.trim();
+    if (phone !== undefined) updateDoc.phone = phone.trim();
+    if (address !== undefined) updateDoc.address = address.trim();
     if (businessName !== undefined && req.user.role === ROLES.VENDOR) {
       updateDoc.businessName = businessName.trim();
     }
