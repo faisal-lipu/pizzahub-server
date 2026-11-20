@@ -9,6 +9,7 @@ import {
   ROLES,
   formatOrderDocument,
 } from '../models/schemas.js';
+import { sendOrderNotificationEmail } from '../utils/email.js';
 
 const router = express.Router();
 
@@ -362,17 +363,91 @@ router.patch(['/vendor/:id/action', '/:id/:action', '/vendor/:id/:action'], veri
       }
     );
 
+    // Optional Requirement 5: Email notification when an order is accepted or rejected
+    let emailResult = null;
+    let customer = null;
+    try {
+      customer = await collections.users.findOne({
+        $or: [
+          { _id: new ObjectId(order.customerId) },
+          { _id: order.customerId },
+        ],
+      });
+
+      const item = await collections.menuItems.findOne({
+        $or: [
+          { _id: new ObjectId(order.itemId) },
+          { _id: order.itemId },
+        ],
+      });
+
+      const vendorName = req.user.businessName || req.user.name || 'Artisan Kitchen';
+
+      if (customer?.email) {
+        emailResult = await sendOrderNotificationEmail({
+          customerId: customer._id,
+          customerEmail: customer.email,
+          customerName: customer.name || 'Valued Customer',
+          orderId: order._id,
+          pizzaName: item?.itemName || item?.name || 'Artisan Pizza',
+          pizzaPrice: item?.price || 14.99,
+          status: targetStatus,
+          vendorName,
+          deliveryAddress: order.deliveryAddress,
+          deliveryDate: order.deliveryDate,
+        });
+      }
+    } catch (mailErr) {
+      console.warn('[Vendor Order Email Error]: Non-fatal email dispatch failure:', mailErr.message);
+    }
+
     return res.status(200).json({
       success: true,
-      message: `Order successfully ${targetStatus}.`,
+      message: `Order successfully ${targetStatus}. Automated email notification sent to ${customer?.email || 'customer'}.`,
       orderId: id,
       newStatus: targetStatus,
+      emailNotification: {
+        sent: Boolean(emailResult?.success),
+        recipient: customer?.email,
+        previewUrl: emailResult?.previewUrl || null,
+      },
     });
   } catch (error) {
     console.error('[Vendor Order Action Error]:', error.message);
     return res.status(500).json({
       success: false,
       message: 'Failed to update order status.',
+    });
+  }
+});
+
+/**
+ * GET /api/orders/notifications
+ * Retrieve email notification history for the authenticated user
+ */
+router.get('/notifications', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user._id.toString();
+    const notifications = await collections.notifications
+      .find({
+        $or: [
+          { customerId: userId },
+          { customerEmail: req.user.email },
+        ],
+      })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .toArray();
+
+    return res.status(200).json({
+      success: true,
+      notifications,
+    });
+  } catch (error) {
+    console.error('[Get Notifications Error]:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch notifications.',
     });
   }
 });

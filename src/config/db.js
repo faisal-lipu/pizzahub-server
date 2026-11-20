@@ -51,6 +51,9 @@ export const collections = {
   },
   get transactions() {
     return getDB().collection('transactions');
+  },
+  get notifications() {
+    return getDB().collection('notifications');
   }
 };
 
