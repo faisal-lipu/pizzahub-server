@@ -524,7 +524,7 @@ router.get('/my-orders/stats', verifyToken, verifyCustomer, async (req, res) => 
  * Cancel a pending order by customer
  * Rule: Only pending orders can be cancelled; accepted, rejected, or already cancelled orders cannot be cancelled
  */
-router.patch('/my-orders/:id/cancel', verifyToken, verifyCustomer, async (req, res) => {
+router.patch(['/my-orders/:id/cancel', '/:id/cancel'], verifyToken, verifyCustomer, async (req, res) => {
   try {
     const { id } = req.params;
 
