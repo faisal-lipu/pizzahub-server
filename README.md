@@ -6,9 +6,22 @@ PizzaHub is a complete, role-based food ordering and delivery platform backend b
 
 ## 🌐 Live & Repository Links
 
-- **Live API URL:** `https://pizzahub-server.onrender.com` *(or deployment link)*
-- **Client Repository:** [https://github.com/faisal-lipu/PizzaHub-client](https://github.com/faisal-lipu/PizzaHub-client)
-- **Server Repository:** [https://github.com/faisal-lipu/PizzaHub-server](https://github.com/faisal-lipu/PizzaHub-server)
+- **Live Client URL:** [https://pizzahub-client-beta.vercel.app](https://pizzahub-client-beta.vercel.app)
+- **Live Server API:** [https://pizzahub-server-seven.vercel.app](https://pizzahub-server-seven.vercel.app)
+- **Client Repository:** [https://github.com/faisal-lipu/pizzahub-client](https://github.com/faisal-lipu/pizzahub-client)
+- **Server Repository:** [https://github.com/faisal-lipu/pizzahub-server](https://github.com/faisal-lipu/pizzahub-server)
+
+---
+
+## 🔑 Demo Review Credentials & Stripe Test Card
+
+| Role | Email | Password | Allowed Access |
+|---|---|---|---|
+| **Admin** | `admin@pizzahub.com` | `Admin@123` | Full Admin Console (`/dashboard/admin`), User Moderation, Menu Approval, Transaction Audits |
+| **Vendor** | `vendor@pizzahub.com` | `Vendor@123` | Vendor Dashboard (`/dashboard/vendor`), Menu Item CRUD, Order Management, Stripe Subscription Upgrade |
+| **Customer** | `test@pizzahub.com` | `Customer@123` | Customer Dashboard (`/dashboard/customer`), Food Ordering, Order Tracking & Cancellation |
+
+- **Stripe Test Card Number:** `4242 4242 4242 4242` | **Expiry:** Any future date (e.g., `12/30`) | **CVC:** `123` | **Zip:** Any 5 digits (e.g. `10001`)
 
 ---
 
