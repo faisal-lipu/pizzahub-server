@@ -4,6 +4,7 @@ import { collections } from '../config/db.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
 import { verifyVendor, verifyAdmin } from '../middlewares/verifyRole.js';
 import {
+  ROLES,
   MENU_CATEGORIES,
   MENU_STATUS,
   SUBSCRIPTION_PLANS,
@@ -11,6 +12,16 @@ import {
 } from '../models/schemas.js';
 
 const router = express.Router();
+
+/**
+ * Matches vendorId whether stored as string or ObjectId in MongoDB
+ */
+function buildVendorIdQuery(vendorId) {
+  const idStr = vendorId?.toString();
+  return idStr && ObjectId.isValid(idStr)
+    ? { $in: [idStr, new ObjectId(idStr)] }
+    : idStr;
+}
 
 /**
  * POST /api/menu
@@ -29,10 +40,18 @@ router.post('/', verifyToken, verifyVendor, async (req, res) => {
     const preparationTime = parseInt(req.body.preparationTime, 10) || 15;
 
     // Validate required fields
-    if (!rawName || !category || price === undefined) {
+    if (!rawName || !category || price === undefined || price === '') {
       return res.status(400).json({
         success: false,
         message: 'Item name, category, and price are required.',
+      });
+    }
+
+    const numericPrice = Number(price);
+    if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Price must be a valid positive number.',
       });
     }
 
@@ -58,7 +77,7 @@ router.post('/', verifyToken, verifyVendor, async (req, res) => {
     // Free plan rule: maximum 3 items (excluding rejected ones)
     if (!isPremium) {
       const currentItemCount = await collections.menuItems.countDocuments({
-        vendorId: req.user._id,
+        vendorId: buildVendorIdQuery(req.user._id),
         status: { $ne: MENU_STATUS.REJECTED },
       });
 
@@ -75,7 +94,7 @@ router.post('/', verifyToken, verifyVendor, async (req, res) => {
 
     // Create menu item with default status 'pending'
     const newMenuItem = formatMenuItemDocument(
-      { itemName: rawName, category, description, price, location, images: finalImages, preparationTime },
+      { itemName: rawName, category, description, price: numericPrice, location, images: finalImages, preparationTime },
       req.user._id
     );
 
@@ -102,7 +121,7 @@ router.post('/', verifyToken, verifyVendor, async (req, res) => {
 router.get(['/my-items', '/vendor/my-items'], verifyToken, verifyVendor, async (req, res) => {
   try {
     const items = await collections.menuItems
-      .find({ vendorId: req.user._id })
+      .find({ vendorId: buildVendorIdQuery(req.user._id) })
       .sort({ createdAt: -1 })
       .toArray();
 
@@ -137,7 +156,7 @@ router.get('/my-items/:id', verifyToken, verifyVendor, async (req, res) => {
 
     const item = await collections.menuItems.findOne({
       _id: new ObjectId(id),
-      vendorId: req.user._id,
+      vendorId: buildVendorIdQuery(req.user._id),
     });
 
     if (!item) {
@@ -196,7 +215,10 @@ router.patch(['/my-items/:id', '/:id'], verifyToken, verifyVendor, async (req, r
     }
 
     const updateDoc = {};
-    if (itemName !== undefined) updateDoc.itemName = itemName.trim();
+    if (itemName !== undefined) {
+      updateDoc.itemName = itemName.trim();
+      updateDoc.name = itemName.trim();
+    }
     if (category !== undefined) {
       if (!MENU_CATEGORIES.includes(category)) {
         return res.status(400).json({ success: false, message: 'Invalid category.' });
@@ -206,7 +228,15 @@ router.patch(['/my-items/:id', '/:id'], verifyToken, verifyVendor, async (req, r
     if (description !== undefined) updateDoc.description = description.trim();
     if (price !== undefined) updateDoc.price = Number(price);
     if (location !== undefined) updateDoc.location = location.trim();
-    if (images !== undefined) updateDoc.images = Array.isArray(images) ? images : [images];
+    if (images !== undefined) {
+      const normalizedImages = (Array.isArray(images) ? images : [images]).filter(
+        (img) => typeof img === 'string' && img.trim() !== ''
+      );
+      if (normalizedImages.length > 0) {
+        updateDoc.images = normalizedImages;
+        updateDoc.image = normalizedImages[0];
+      }
+    }
 
     // Status toggle logic
     if (status !== undefined) {
